@@ -8,6 +8,7 @@
 AI 활용 포인트:
   이 파일을 Claude.ai에 붙여넣고 "테스트 케이스를 보강해줘" 라고 물어보세요
 """
+
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -19,8 +20,8 @@ from settlement.main import app
 from settlement.models.models import Order, OrderStatus, SettlementStatus
 from settlement.services.settlement_service import SettlementService
 
-
 # ── 픽스처 ────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def client():
@@ -49,38 +50,41 @@ def sample_order():
 
 # ── 모델 단위 테스트 ──────────────────────────────────────────────────
 
+
 class TestOrderModel:
     def test_fee_amount(self):
         """수수료 3% 계산"""
-        o = Order(order_id="T1", merchant_id="M", customer_id="C",
-                  amount=Decimal("100000"))
-        assert o.fee_amount == Decimal("3000")   # 100,000 × 3%
+        o = Order(order_id="T1", merchant_id="M", customer_id="C", amount=Decimal("100000"))
+        assert o.fee_amount == Decimal("3000")  # 100,000 × 3%
 
     def test_net_amount(self):
         """실 정산액 = 매출 - 수수료"""
-        o = Order(order_id="T2", merchant_id="M", customer_id="C",
-                  amount=Decimal("100000"))
+        o = Order(order_id="T2", merchant_id="M", customer_id="C", amount=Decimal("100000"))
         assert o.net_amount == Decimal("97000")
 
     def test_default_status_pending(self):
-        o = Order(order_id="T3", merchant_id="M", customer_id="C",
-                  amount=Decimal("50000"))
+        o = Order(order_id="T3", merchant_id="M", customer_id="C", amount=Decimal("50000"))
         assert o.status == OrderStatus.PENDING
 
     def test_negative_amount_raises(self):
         with pytest.raises(Exception):
-            Order(order_id="T4", merchant_id="M", customer_id="C",
-                  amount=Decimal("-1"))
+            Order(order_id="T4", merchant_id="M", customer_id="C", amount=Decimal("-1"))
 
     def test_fee_rounding(self):
         """소수점 수수료 반올림 (원 단위)"""
-        o = Order(order_id="T5", merchant_id="M", customer_id="C",
-                  amount=Decimal("33333"), fee_rate=Decimal("0.03"))
+        o = Order(
+            order_id="T5",
+            merchant_id="M",
+            customer_id="C",
+            amount=Decimal("33333"),
+            fee_rate=Decimal("0.03"),
+        )
         # 33333 × 0.03 = 999.99 → 1000 (반올림)
         assert o.fee_amount == Decimal("1000")
 
 
 # ── 서비스 단위 테스트 ────────────────────────────────────────────────
+
 
 class TestSettlementService:
     def test_add_and_complete_order(self, svc, sample_order):
@@ -98,34 +102,32 @@ class TestSettlementService:
         merchant = "M-CALC"
         amounts = [Decimal("50000"), Decimal("100000"), Decimal("200000")]
         for i, amt in enumerate(amounts):
-            o = Order(order_id=f"O-{i}", merchant_id=merchant,
-                      customer_id="C", amount=amt)
+            o = Order(order_id=f"O-{i}", merchant_id=merchant, customer_id="C", amount=amt)
             svc.add_order(o)
             svc.complete_order(o.order_id)
 
         start = datetime.utcnow() - timedelta(hours=1)
-        end   = datetime.utcnow() + timedelta(hours=1)
-        rec   = svc.calculate_settlement(merchant, start, end)
+        end = datetime.utcnow() + timedelta(hours=1)
+        rec = svc.calculate_settlement(merchant, start, end)
 
         expected_sales = sum(amounts)
-        expected_fee   = sum(a * Decimal("0.03") for a in amounts)
+        expected_fee = sum(a * Decimal("0.03") for a in amounts)
 
-        assert rec.order_count  == 3
-        assert rec.total_sales  == expected_sales
+        assert rec.order_count == 3
+        assert rec.total_sales == expected_sales
         # 정수 비교 (양쪽 모두 quantize 결과)
         assert rec.total_fee.quantize(Decimal("1")) == expected_fee.quantize(Decimal("1"))
-        assert rec.net_amount   == expected_sales - rec.total_fee
-        assert rec.status       == SettlementStatus.PENDING
+        assert rec.net_amount == expected_sales - rec.total_fee
+        assert rec.status == SettlementStatus.PENDING
 
     def test_pending_orders_excluded(self, svc):
         """PENDING 상태 주문은 정산 제외"""
-        o = Order(order_id="PEND-1", merchant_id="M-X",
-                  customer_id="C", amount=Decimal("100000"))
+        o = Order(order_id="PEND-1", merchant_id="M-X", customer_id="C", amount=Decimal("100000"))
         svc.add_order(o)  # 완료 처리 안 함
 
         start = datetime.utcnow() - timedelta(hours=1)
-        end   = datetime.utcnow() + timedelta(hours=1)
-        rec   = svc.calculate_settlement("M-X", start, end)
+        end = datetime.utcnow() + timedelta(hours=1)
+        rec = svc.calculate_settlement("M-X", start, end)
 
         assert rec.order_count == 0
         assert rec.total_sales == Decimal("0")
@@ -134,7 +136,7 @@ class TestSettlementService:
         svc.add_order(sample_order)
         svc.complete_order(sample_order.order_id)
 
-        rec  = svc.calculate_settlement(
+        rec = svc.calculate_settlement(
             "M-TEST",
             datetime.utcnow() - timedelta(hours=1),
             datetime.utcnow() + timedelta(hours=1),
@@ -147,8 +149,7 @@ class TestSettlementService:
     def test_list_settlements_filter(self, svc):
         """merchant_id 필터 동작 확인"""
         for m in ["M-A", "M-B"]:
-            o = Order(order_id=f"O-{m}", merchant_id=m,
-                      customer_id="C", amount=Decimal("10000"))
+            o = Order(order_id=f"O-{m}", merchant_id=m, customer_id="C", amount=Decimal("10000"))
             svc.add_order(o)
             svc.complete_order(o.order_id)
             svc.calculate_settlement(
@@ -163,8 +164,12 @@ class TestSettlementService:
     def test_list_settlements_combined_filter(self, svc):
         """merchant_id + status 동시 필터: 교집합만 정확히 반환되어야 한다"""
         # M-COMBO-A: 정산까지 처리 완료 (COMPLETED)
-        o1 = Order(order_id=f"O-{uuid.uuid4().hex[:6]}", merchant_id="M-COMBO-A",
-                   customer_id="C", amount=Decimal("10000"))
+        o1 = Order(
+            order_id=f"O-{uuid.uuid4().hex[:6]}",
+            merchant_id="M-COMBO-A",
+            customer_id="C",
+            amount=Decimal("10000"),
+        )
         svc.add_order(o1)
         svc.complete_order(o1.order_id)
         rec_completed = svc.calculate_settlement(
@@ -182,8 +187,12 @@ class TestSettlementService:
         )
 
         # M-COMBO-B: 다른 판매자의 COMPLETED 정산 (필터에 섞여 들어오면 안 됨)
-        o2 = Order(order_id=f"O-{uuid.uuid4().hex[:6]}", merchant_id="M-COMBO-B",
-                   customer_id="C", amount=Decimal("20000"))
+        o2 = Order(
+            order_id=f"O-{uuid.uuid4().hex[:6]}",
+            merchant_id="M-COMBO-B",
+            customer_id="C",
+            amount=Decimal("20000"),
+        )
         svc.add_order(o2)
         svc.complete_order(o2.order_id)
         rec_other = svc.calculate_settlement(
@@ -193,9 +202,7 @@ class TestSettlementService:
         )
         svc.process_settlement(rec_other.settlement_id)
 
-        result = svc.list_settlements(
-            merchant_id="M-COMBO-A", status=SettlementStatus.COMPLETED
-        )
+        result = svc.list_settlements(merchant_id="M-COMBO-A", status=SettlementStatus.COMPLETED)
 
         assert len(result) == 1
         assert result[0].settlement_id == rec_completed.settlement_id
@@ -224,8 +231,12 @@ class TestSettlementService:
 
     def test_calculate_settlement_orders_outside_period_excluded(self, svc):
         """정산 기간 밖에서 완료된 주문은 대상에서 제외되어 0건이어야 한다"""
-        o = Order(order_id=f"O-{uuid.uuid4().hex[:6]}", merchant_id="M-OUT",
-                  customer_id="C", amount=Decimal("100000"))
+        o = Order(
+            order_id=f"O-{uuid.uuid4().hex[:6]}",
+            merchant_id="M-OUT",
+            customer_id="C",
+            amount=Decimal("100000"),
+        )
         svc.add_order(o)
         svc.complete_order(o.order_id)
         # 완료 시각을 정산 기간 밖(1년 전)으로 강제 이동
@@ -241,6 +252,7 @@ class TestSettlementService:
 
 
 # ── API 통합 테스트 ───────────────────────────────────────────────────
+
 
 class TestAPI:
     def test_health(self, client):
