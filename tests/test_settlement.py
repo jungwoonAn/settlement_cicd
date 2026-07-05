@@ -25,9 +25,6 @@ from settlement.services.settlement_service import SettlementService
 
 @pytest.fixture
 def client():
-    # context manager로 사용해야 FastAPI lifespan(시작/종료 이벤트)이
-    # 실제로 실행됩니다. 앱 시작 시 _seed_sample_data()가 호출되어
-    # M-001, M-002 샘플 주문이 생성됩니다.
     with TestClient(app) as c:
         yield c
 
@@ -44,7 +41,7 @@ def sample_order():
         merchant_id="M-TEST",
         customer_id="C-001",
         amount=Decimal("100000"),
-        fee_rate=Decimal("0.05"),
+        fee_rate=Decimal("0.05"),  # 3% → 5%
     )
 
 
@@ -55,12 +52,12 @@ class TestOrderModel:
     def test_fee_amount(self):
         """수수료 5% 계산"""
         o = Order(order_id="T1", merchant_id="M", customer_id="C", amount=Decimal("100000"))
-        assert o.fee_amount == Decimal("5000")  # 100,000 × 5%
+        assert o.fee_amount == Decimal("5000")  # 100,000 × 5% (3000 → 5000)
 
     def test_net_amount(self):
         """실 정산액 = 매출 - 수수료"""
         o = Order(order_id="T2", merchant_id="M", customer_id="C", amount=Decimal("100000"))
-        assert o.net_amount == Decimal("97000")
+        assert o.net_amount == Decimal("95000")  # 97000 → 95000
 
     def test_default_status_pending(self):
         o = Order(order_id="T3", merchant_id="M", customer_id="C", amount=Decimal("50000"))
@@ -77,10 +74,10 @@ class TestOrderModel:
             merchant_id="M",
             customer_id="C",
             amount=Decimal("33333"),
-            fee_rate=Decimal("0.05"),
+            fee_rate=Decimal("0.05"),  # 0.03 → 0.05
         )
-        # 33333 × 0.05 = 999.99 → 1000 (반올림)
-        assert o.fee_amount == Decimal("1000")
+        # 33333 × 0.05 = 1666.65 → 1667 (반올림)
+        assert o.fee_amount == Decimal("1667")  # 1000 → 1667
 
 
 # ── 서비스 단위 테스트 ────────────────────────────────────────────────
@@ -111,11 +108,10 @@ class TestSettlementService:
         rec = svc.calculate_settlement(merchant, start, end)
 
         expected_sales = sum(amounts)
-        expected_fee = sum(a * Decimal("0.05") for a in amounts)
+        expected_fee = sum(a * Decimal("0.05") for a in amounts)  # 0.03 → 0.05
 
         assert rec.order_count == 3
         assert rec.total_sales == expected_sales
-        # 정수 비교 (양쪽 모두 quantize 결과)
         assert rec.total_fee.quantize(Decimal("1")) == expected_fee.quantize(Decimal("1"))
         assert rec.net_amount == expected_sales - rec.total_fee
         assert rec.status == SettlementStatus.PENDING
@@ -123,7 +119,7 @@ class TestSettlementService:
     def test_pending_orders_excluded(self, svc):
         """PENDING 상태 주문은 정산 제외"""
         o = Order(order_id="PEND-1", merchant_id="M-X", customer_id="C", amount=Decimal("100000"))
-        svc.add_order(o)  # 완료 처리 안 함
+        svc.add_order(o)
 
         start = datetime.utcnow() - timedelta(hours=1)
         end = datetime.utcnow() + timedelta(hours=1)
@@ -163,7 +159,6 @@ class TestSettlementService:
 
     def test_list_settlements_combined_filter(self, svc):
         """merchant_id + status 동시 필터: 교집합만 정확히 반환되어야 한다"""
-        # M-COMBO-A: 정산까지 처리 완료 (COMPLETED)
         o1 = Order(
             order_id=f"O-{uuid.uuid4().hex[:6]}",
             merchant_id="M-COMBO-A",
@@ -179,14 +174,12 @@ class TestSettlementService:
         )
         svc.process_settlement(rec_completed.settlement_id)
 
-        # M-COMBO-A: 정산 레코드는 있지만 처리(process)는 하지 않은 PENDING 건
         rec_pending = svc.calculate_settlement(
             "M-COMBO-A",
             datetime.utcnow() - timedelta(hours=1),
             datetime.utcnow() + timedelta(hours=1),
         )
 
-        # M-COMBO-B: 다른 판매자의 COMPLETED 정산 (필터에 섞여 들어오면 안 됨)
         o2 = Order(
             order_id=f"O-{uuid.uuid4().hex[:6]}",
             merchant_id="M-COMBO-B",
@@ -208,7 +201,6 @@ class TestSettlementService:
         assert result[0].settlement_id == rec_completed.settlement_id
         assert result[0].merchant_id == "M-COMBO-A"
         assert result[0].status == SettlementStatus.COMPLETED
-        # 같은 판매자의 PENDING 건은 결과에 섞이지 않아야 한다
         assert rec_pending.settlement_id not in [r.settlement_id for r in result]
 
     def test_process_settlement_unknown_id_returns_none(self, svc):
@@ -239,7 +231,6 @@ class TestSettlementService:
         )
         svc.add_order(o)
         svc.complete_order(o.order_id)
-        # 완료 시각을 정산 기간 밖(1년 전)으로 강제 이동
         o.completed_at = datetime.utcnow() - timedelta(days=365)
 
         rec = svc.calculate_settlement(
@@ -270,7 +261,7 @@ class TestAPI:
             "merchant_id": "M-API",
             "customer_id": "C-001",
             "amount": "75000",
-            "fee_rate": "0.05",
+            "fee_rate": "0.05",  # 0.03 → 0.05
             "status": "pending",
             "created_at": datetime.utcnow().isoformat(),
         }
@@ -301,7 +292,6 @@ class TestAPI:
 
     def test_list_orders_filtered_by_merchant(self, client):
         """merchant_id로 필터링된 주문 목록 조회"""
-        # lifespan 시작 시 시딩되는 M-001 샘플 주문을 이용
         res = client.get("/api/v1/orders?merchant_id=M-001")
         assert res.status_code == 200
         body = res.json()
