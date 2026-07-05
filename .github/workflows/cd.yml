@@ -27,12 +27,12 @@ jobs:
       - name: Set kubeconfig context
         run: kind export kubeconfig --name settlement-local
 
+      - name: Apply manifests
+        run: kubectl apply -f k8s/ -n default
+
       - name: Restart deployment to pick up new image
         run: |
           kubectl rollout restart deployment/settlement -n default
-
-      - name: Apply manifests (in case of config changes)
-        run: kubectl apply -f k8s/ -n default
 
       - name: Wait for rollout to complete
         run: kubectl rollout status deployment/settlement -n default --timeout=120s
