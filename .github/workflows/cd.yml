@@ -1,0 +1,42 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Verify image exists locally
+        run: docker image inspect settlement:latest
+
+      - name: Load image into kind cluster
+        run: kind load docker-image settlement:latest --name settlement-local
+
+      - name: Set kubeconfig context
+        run: kind export kubeconfig --name settlement-local
+
+      - name: Restart deployment to pick up new image
+        run: |
+          kubectl rollout restart deployment/settlement -n default
+
+      - name: Apply manifests (in case of config changes)
+        run: kubectl apply -f k8s/ -n default
+
+      - name: Wait for rollout to complete
+        run: kubectl rollout status deployment/settlement -n default --timeout=120s
+
+      - name: Show pod status
+        if: always()
+        run: kubectl get pods -n default -o wide
