@@ -36,7 +36,7 @@ jobs:
             --cov-fail-under=80
 
       - name: Build Docker image
-        run: docker build -t settlement .
+        run: docker build -t settlement:${{ github.sha }} .
 
       - name: Scan image with Trivy (CRITICAL only, ignore unfixed)
         run: |
@@ -45,4 +45,4 @@ jobs:
             --ignore-unfixed \
             --exit-code 1 \
             --format table \
-            settlement
+            settlement:${{ github.sha }}
