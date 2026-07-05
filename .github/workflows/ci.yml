@@ -1,15 +1,12 @@
 name: CI
-
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
-
 jobs:
   lint-test:
-    runs-on: ubuntu-latest
-
+    runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,7 +15,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -38,3 +34,15 @@ jobs:
             --cov=settlement \
             --cov-report=term-missing \
             --cov-fail-under=80
+
+      - name: Build Docker image
+        run: docker build -t settlement .
+
+      - name: Scan image with Trivy (CRITICAL only, ignore unfixed)
+        run: |
+          trivy image \
+            --severity CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --format table \
+            settlement
