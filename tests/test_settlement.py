@@ -44,7 +44,7 @@ def sample_order():
         merchant_id="M-TEST",
         customer_id="C-001",
         amount=Decimal("100000"),
-        fee_rate=Decimal("0.03"),
+        fee_rate=Decimal("0.05"),
     )
 
 
@@ -53,9 +53,9 @@ def sample_order():
 
 class TestOrderModel:
     def test_fee_amount(self):
-        """수수료 3% 계산"""
+        """수수료 5% 계산"""
         o = Order(order_id="T1", merchant_id="M", customer_id="C", amount=Decimal("100000"))
-        assert o.fee_amount == Decimal("3000")  # 100,000 × 3%
+        assert o.fee_amount == Decimal("5000")  # 100,000 × 5%
 
     def test_net_amount(self):
         """실 정산액 = 매출 - 수수료"""
@@ -77,9 +77,9 @@ class TestOrderModel:
             merchant_id="M",
             customer_id="C",
             amount=Decimal("33333"),
-            fee_rate=Decimal("0.03"),
+            fee_rate=Decimal("0.05"),
         )
-        # 33333 × 0.03 = 999.99 → 1000 (반올림)
+        # 33333 × 0.05 = 999.99 → 1000 (반올림)
         assert o.fee_amount == Decimal("1000")
 
 
@@ -111,7 +111,7 @@ class TestSettlementService:
         rec = svc.calculate_settlement(merchant, start, end)
 
         expected_sales = sum(amounts)
-        expected_fee = sum(a * Decimal("0.03") for a in amounts)
+        expected_fee = sum(a * Decimal("0.05") for a in amounts)
 
         assert rec.order_count == 3
         assert rec.total_sales == expected_sales
@@ -270,7 +270,7 @@ class TestAPI:
             "merchant_id": "M-API",
             "customer_id": "C-001",
             "amount": "75000",
-            "fee_rate": "0.03",
+            "fee_rate": "0.05",
             "status": "pending",
             "created_at": datetime.utcnow().isoformat(),
         }
