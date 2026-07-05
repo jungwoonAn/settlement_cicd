@@ -32,7 +32,7 @@ class Order(BaseModel):
     merchant_id: str = Field(..., description="판매자 ID")
     customer_id: str = Field(..., description="고객 ID")
     amount: Decimal = Field(..., ge=0, description="주문 금액(원)")
-    fee_rate: Decimal = Field(default=Decimal("0.03"), description="수수료율 (기본 3%)")
+    fee_rate: Decimal = Field(default=Decimal("0.05"), description="수수료율 (기본 5%)")
     status: OrderStatus = Field(default=OrderStatus.PENDING)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
